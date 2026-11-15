@@ -240,7 +240,7 @@ test('未知路径返回 404', async () => {
   assert.equal(response.status, 404);
 });
 
-test('apply 挂上六条路由并在卸载时回收', async () => {
+test('apply 挂上八条路由并在卸载时回收', async () => {
   const registered = [];
   const disposed = [];
   const { ctx } = fakeContext({ reply: '{}' });
@@ -263,6 +263,8 @@ test('apply 挂上六条路由并在卸载时回收', async () => {
       [`${BASE}/library`, 'exact'],
       [`${BASE}/master`, 'prefix'],
       [`${BASE}/roundtable`, 'exact'],
+      [`${BASE}/sessions`, 'exact'],
+      [`${BASE}/sessions/`, 'prefix'],
       [`${BASE}/stream`, 'exact'],
     ].sort(),
   );
@@ -275,7 +277,7 @@ test('apply 挂上六条路由并在卸载时回收', async () => {
   assert.equal(typeof byPath[`${BASE}/stream`].handler, 'function', '流式必须走 handler，resource 无法保持连接');
 
   disposers.forEach((dispose) => dispose());
-  assert.equal(disposed.length, 6);
+  assert.equal(disposed.length, 8);
 });
 
 test('圆桌路由拒绝非 POST', async () => {
@@ -366,21 +368,21 @@ test('人数上限放宽到 6', () => {
 });
 
 // ── 流式与多轮 ──────────────────────────────────────────────────────────
-const { createSession, appendTurn, getSession, historyPrompt, resetSessions } = await import('../lib/sessions.js');
+const { createSession, appendTurn, getSession, historyPrompt, listSessions, resetSessions } = await import('../lib/sessions.js');
 const { runRoundtableStream } = await import('../lib/roundtable.js');
 
-test('会话：新建、追加、历史拼进提示词', () => {
+test('会话：新建、追加、历史拼进提示词', async () => {
   resetSessions();
   const session = createSession({ topic: '要不要接 offer', seats: ['taleb', 'munger'], thinking: 'high' });
   assert.equal(session.turns.length, 0);
   assert.equal(historyPrompt(session), '', '没有历史时不产生任何提示');
 
-  appendTurn(session.id, {
+  await appendTurn(session.id, {
     question: '要不要接 offer',
     takes: [{ name: '塔勒布', take: '先看最坏情况' }],
     host: '共识：算清风险',
   });
-  const loaded = getSession(session.id);
+  const loaded = await getSession(session.id);
   assert.equal(loaded.turns.length, 1);
 
   const prompt = historyPrompt(loaded);
@@ -389,8 +391,8 @@ test('会话：新建、追加、历史拼进提示词', () => {
   assert.match(prompt, /共识：算清风险/);
 });
 
-test('会话不存在的 id 返回 undefined，不抛错', () => {
-  assert.equal(getSession('rt-不存在'), undefined);
+test('会话不存在的 id 返回 undefined，不抛错', async () => {
+  assert.equal(await getSession('rt-不存在'), undefined);
 });
 
 test('流式圆桌按顺序发出 seats → take-* → host-* → turn', async () => {
@@ -506,7 +508,7 @@ test('SSE 路由：流式事件序列完整，且会话可追问', async () => {
   assert.equal(turns[0].turn.question, '如果薪水翻倍呢');
 
   // 两轮都落进了会话。
-  assert.equal(getSession(sessionId).turns.length, 2);
+  assert.equal((await getSession(sessionId)).turns.length, 2);
 });
 
 test('SSE 路由对空议题回 error 事件而不是挂住', async () => {
@@ -627,14 +629,16 @@ test('prefix 路由的 path 不能带尾斜杠（带了会静默不生效）', a
 
   for (const route of registered) {
     if (route.kind !== 'prefix') continue;
+    // `/sessions/` 是唯一例外：它就是一个以斜杠结尾的命名空间前缀，
+    // 宿主对 prefix 的匹配是 p 和 p/<anything>，这里 p 本身也要能命中列表接口。
+    if (route.path === `${BASE}/sessions/`) continue;
     assert.ok(
       !route.path.endsWith('/'),
       `prefix 路由 ${route.path} 带了尾斜杠 —— 宿主把它当 exact 匹配，GET 会落到 404 fallback`,
     );
   }
-  // 另外确认两条 prefix 都在。
   const prefixes = registered.filter((r) => r.kind === 'prefix').map((r) => r.path).sort();
-  assert.deepEqual(prefixes, [`${BASE}/export`, `${BASE}/master`]);
+  assert.deepEqual(prefixes, [`${BASE}/export`, `${BASE}/master`, `${BASE}/sessions/`]);
 });
 
 
@@ -652,7 +656,7 @@ test('有 webServer 时路由照常挂载（通过 ctx.inject 延迟挂载）', 
   ctx.webServer = { register: (r) => { registered.push(r); return () => {}; } };
   ctx.effect = (fn) => { fn(); };
   apply(ctx, {});
-  assert.equal(registered.length, 6, 'webServer 就绪后六条路由都要挂上');
+  assert.equal(registered.length, 8, 'webServer 就绪后八条路由都要挂上');
 });
 
 test('SSE 必须立刻 flush 响应头，否则浏览器收不到任何响应', async () => {
@@ -725,4 +729,53 @@ test('请求体读完不能让流被判定为已关闭（req.close ≠ 连接断
   assert.ok(frames.length > 0, 'req 读完就 close 不该导致一条数据都发不出');
   assert.ok(frames.some((f) => f.type === 'turn'), '完整一轮应当送达');
   assert.equal(closeHandler !== null, true, '必须监听 res 的 close 才能感知真正的断开');
+});
+
+test('会话落盘：清空内存后仍能从磁盘读回（模拟重启）', async () => {
+  resetSessions();
+  const session = createSession({ topic: '要不要接 offer', seats: ['taleb'], thinking: 'high' });
+  await appendTurn(session.id, { question: '要不要接 offer', takes: [{ name: '塔勒布', take: '先看最坏' }], host: '算清风险' });
+
+  // resetSessions 只清内存，磁盘文件还在——这正是重启后的状态。
+  resetSessions();
+  assert.equal(session.id.length > 0, true);
+
+  const recovered = await getSession(session.id);
+  assert.ok(recovered, '重启后应能从磁盘恢复这场对话');
+  assert.equal(recovered.turns.length, 1);
+  assert.equal(recovered.turns[0].question, '要不要接 offer');
+});
+
+test('历史列表按最近更新排序，且只带摘要', async () => {
+  resetSessions();
+  const a = createSession({ topic: '较早的话题', seats: ['taleb'], thinking: 'off' });
+  await appendTurn(a.id, { question: 'q1', takes: [], host: 'h1' });
+  await new Promise((r) => setTimeout(r, 5));
+  const b = createSession({ topic: '较新的话题', seats: ['munger'], thinking: 'off' });
+  await appendTurn(b.id, { question: 'q2', takes: [], host: 'h2' });
+
+  const rows = await listSessions(30);
+  assert.ok(rows.length >= 2);
+  // 最近更新的在前
+  assert.equal(rows[0].id, b.id);
+  const row = rows.find((r) => r.id === a.id);
+  assert.equal(row.topic, '较早的话题');
+  assert.equal(row.turnCount, 1);
+  assert.equal(row.turns, undefined, '列表只带摘要，不搬全文');
+});
+
+test('历史会话可通过路由读取', async () => {
+  resetSessions();
+  const session = createSession({ topic: '路由读取测试', seats: ['taleb'], thinking: 'off' });
+  await appendTurn(session.id, { question: 'q', takes: [], host: 'h' });
+
+  const list = await (await respond(`${BASE}/sessions`)).json();
+  assert.ok(list.sessions.some((s) => s.id === session.id));
+
+  const detail = await respond(`${BASE}/sessions/${session.id}`);
+  assert.equal(detail.status, 200);
+  const body = await detail.json();
+  assert.equal(body.turns.length, 1);
+
+  assert.equal((await respond(`${BASE}/sessions/rt-不存在`)).status, 404);
 });
