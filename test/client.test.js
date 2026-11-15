@@ -24,9 +24,16 @@ function loadBundle() {
     useEffect: () => {},
     useCallback: (f) => f,
     useMemo: (f) => f(),
+    // useRef 必须在这里：bundle 里用到它，缺了会在渲染时 ReferenceError，
+    // 而 jsx mock 若只返回 null，组件函数根本不会执行，这类错误就漏掉了。
+    useRef: (v) => ({ current: v }),
+    useLayoutEffect: () => {},
     createElement: () => null,
   };
-  const modules = { react: React, 'react/jsx-runtime': { jsx: () => null, jsxs: () => null } };
+  // jsx 真正调用函数组件：否则「组件能否渲染」这类断言等于没测
+  // （曾经因此漏掉 useRef 未定义的崩溃）。
+  const render = (type, props) => (typeof type === 'function' ? type(props) : null);
+  const modules = { react: React, 'react/jsx-runtime': { jsx: render, jsxs: render } };
   const sandbox = {
     console,
     document: undefined,
