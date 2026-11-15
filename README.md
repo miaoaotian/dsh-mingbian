@@ -13,6 +13,8 @@
 
 这是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）的插件。
 
+![明辨面板](docs/screenshot.png)
+
 ---
 
 ## 基于什么做的
