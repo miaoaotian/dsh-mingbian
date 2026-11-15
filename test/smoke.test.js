@@ -652,3 +652,32 @@ test('有 webServer 时路由照常挂载（通过 ctx.inject 延迟挂载）', 
   apply(ctx, {});
   assert.equal(registered.length, 6, 'webServer 就绪后六条路由都要挂上');
 });
+
+test('SSE 必须立刻 flush 响应头，否则浏览器收不到任何响应', async () => {
+  resetSessions();
+  const registered = [];
+  const { ctx } = fakeContext({ reply: 'x' });
+  ctx.webServer = { register: (r) => { registered.push(r); return () => {}; } };
+  ctx.effect = (fn) => fn();
+  apply(ctx, {});
+
+  const route = registered.find((r) => r.path === `${BASE}/stream`);
+  const order = [];
+  const res = {
+    setHeader() {},
+    writeHead() { order.push('writeHead'); },
+    // 真实 Node 的 writeHead 不发数据，必须 flushHeaders 才会把响应头送出。
+    // 没有这一步，第一条 write 之前客户端一直挂着——表现就是「发起了没人回复」。
+    flushHeaders() { order.push('flushHeaders'); },
+    write() { order.push('write'); },
+    end() { order.push('end'); },
+  };
+  let wrote = false;
+  await route.handler(makeReq(JSON.stringify({ question: 'q', masters: ['taleb'] })), res);
+
+  assert.ok(order.includes('flushHeaders'), 'SSE 响应必须调用 flushHeaders');
+  const at = order.indexOf('flushHeaders');
+  assert.ok(at >= 0 && order.indexOf('writeHead') < at, 'flushHeaders 要在 writeHead 之后');
+  assert.ok(order.slice(at).includes('write'), 'flush 之后才写数据');
+  void wrote;
+});
