@@ -89,14 +89,18 @@ dsh plugin --profile web add link:/absolute/path/to/dsh-mingbian
 
 ### 支持的宿主
 
-| 宿主 | 插件加载 | 面板 | 会话工具 |
-|---|---|---|---|
-| `dsh web`（浏览器） | ✓ | ✓ 完整 | ✓ |
-| DSH Desktop（Electron） | ✓ | 显示「无数据通道」说明 | ✓ |
-| `dsh tui` | ✓ | 显示说明 | ✓ |
-| `dsh headless` | ✓ | — | ✓ |
+| 宿主 | 插件加载 | 面板 | 会话工具 | 实测 |
+|---|---|---|---|---|
+| `dsh web`（浏览器） | ✓ | ✓ 完整 | ✓ | 是 |
+| `dsh tui` | ✓ | 显示说明 | ✓ | 是 |
+| `dsh headless` | ✓ | — | ✓ | 是 |
+| DSH Desktop（Electron） | 推断 ✓ | 推断显示说明 | 推断 ✓ | **否** |
 
-Electron 桌面端把页面从 `file://` 加载、fetch 走 IPC bridge；TUI 根本没有 HTTP 服务器。两者都没有 `node:http`，所以面板依赖的 HTTP 数据通道不存在。
+前三行都实测过（web 有截图；tui / headless 用只装 `dsh-base` 的 profile 验证过「0 条未激活警告」）。
+
+**Electron 那一行是推断，没有实测**——我手上没有桌面端安装。推断依据：DSH 文档写明 Electron 把页面从 `file://` 加载、fetch 走 IPC bridge，不使用 `node:http`；而 `dsh-client-connection` 里能注册给第三方插件的 fetch 路由（`registerFetchRoute`、`register`）都是 private，不是公开 API。换句话说，**第三方插件拿面板数据的公开通道只有 `webServer`**——这也是 `dsh-pet` 等有界面的插件把 `webServer` 写进 `inject` 的原因。
+
+如果你在桌面端跑起来发现行为不同（比如它内嵌了一个 HTTP server，面板直接可用），欢迎开 issue 告诉我，那一行就能从推断改成实测。
 
 因此插件把 `webServer` 设成**软依赖**（不在 `inject` 里，用 `ctx.get()` 探测）：
 
