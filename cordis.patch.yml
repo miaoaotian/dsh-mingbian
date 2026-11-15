@@ -1,0 +1,12 @@
+# dsh-mingbian 的 bundle patch —— 把明辨挂进 DSH 配置树。
+#
+# 一个宿主行就够：lib/index.js 在 apply() 里同时注册
+#   - 运行时 skill `mingbian`（ctx.skills.register）
+#   - 两个模型工具 distill_master / master_roundtable（ctx.tools.register）
+#
+# 行的 name 就是包名本身，宿主从 <profile>/node_modules 解析到 lib/index.js。
+# 注意：id 那一行绝不能写行尾注释（商城预检用正则抓值，行尾注释会导致抓不到）。
+
+- insert:
+    - id: dsh-mingbian
+      name: 'dsh-mingbian'

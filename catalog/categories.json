@@ -1,0 +1,79 @@
+[
+  {
+    "slug": "first-principles",
+    "name": "本质拆解",
+    "coreQuestion": "这件事的物理与成本下限是什么？",
+    "color": "#2F6FED",
+    "sortOrder": 1
+  },
+  {
+    "slug": "contradiction",
+    "name": "矛盾结构",
+    "coreQuestion": "当前的主要矛盾是什么？谁是朋友、谁是敌人？",
+    "color": "#0F6B62",
+    "sortOrder": 2
+  },
+  {
+    "slug": "game-theory",
+    "name": "博弈策略",
+    "coreQuestion": "对方的收益结构是什么？我如何改变他的选择？",
+    "color": "#C2413A",
+    "sortOrder": 3
+  },
+  {
+    "slug": "realism",
+    "name": "现实约束",
+    "coreQuestion": "最坏会怎样？我的退路和机会成本是什么？",
+    "color": "#0E7A45",
+    "sortOrder": 4
+  },
+  {
+    "slug": "narrative",
+    "name": "叙事注意力",
+    "coreQuestion": "这个故事让谁产生什么情绪？注意力如何变现？",
+    "color": "#B5651D",
+    "sortOrder": 5
+  },
+  {
+    "slug": "systems",
+    "name": "系统工程",
+    "coreQuestion": "系统的瓶颈、反馈回路和规模效应在哪里？",
+    "color": "#6B3FA0",
+    "sortOrder": 6
+  },
+  {
+    "slug": "compounding",
+    "name": "复利长期",
+    "coreQuestion": "什么能随时间复利？我的能力圈在哪里？",
+    "color": "#1F5FBF",
+    "sortOrder": 7
+  },
+  {
+    "slug": "probability",
+    "name": "概率决策",
+    "coreQuestion": "赔率是多少？最坏情况能否承受？",
+    "color": "#8A5A00",
+    "sortOrder": 8
+  },
+  {
+    "slug": "critical",
+    "name": "批判解构",
+    "coreQuestion": "谁在定义问题？哪些前提值得怀疑？",
+    "color": "#B03A2E",
+    "sortOrder": 9
+  },
+  {
+    "slug": "information",
+    "name": "信息演化",
+    "coreQuestion": "信息如何流动、复制和变异？",
+    "color": "#0F766E",
+    "sortOrder": 10
+  },
+  {
+    "slug": "mind-action",
+    "name": "心性知行",
+    "coreQuestion": "我真的知道吗？如何在事上磨？",
+    "color": "#7A4FCC",
+    "sortOrder": 11
+  }
+]

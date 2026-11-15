@@ -1,0 +1,69 @@
+{
+  "name": "dsh-mingbian",
+  "version": "0.1.0",
+  "description": "明辨 · DeepSeek Harness 插件：把一个人物、一本书或一套思想蒸馏成可上桌的大师卡，并开一场带流式输出和多轮追问的圆桌。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "skill",
+    "catalog",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "icon.svg"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "mingbian",
+    "distill",
+    "master",
+    "roundtable",
+    "decision",
+    "mental-model"
+  ],
+  "license": "MIT",
+  "author": "miaoaotian",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/miaoaotian/dsh-mingbian.git"
+  },
+  "homepage": "https://github.com/miaoaotian/dsh-mingbian#readme",
+  "bugs": {
+    "url": "https://github.com/miaoaotian/dsh-mingbian/issues"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "verify": "node scripts/verify-catalog.mjs"
+  },
+  "icon": "icon.svg",
+  "publishConfig": {
+    "access": "public"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "compatibility": {
+      "dshReleases": {
+        "0.2.1-rc.3": "unknown",
+        "0.2.2-alpha.2": "unknown",
+        "0.2.2-rc.1": "compatible"
+      }
+    },
+    "client": {
+      "platform": "web"
+    }
+  }
+}
