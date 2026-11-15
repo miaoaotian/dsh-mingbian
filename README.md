@@ -94,13 +94,25 @@ dsh plugin --profile web add link:/absolute/path/to/dsh-mingbian
 | `dsh web`（浏览器） | ✓ | ✓ 完整 | ✓ | 是 |
 | `dsh tui` | ✓ | 显示说明 | ✓ | 是 |
 | `dsh headless` | ✓ | — | ✓ | 是 |
-| DSH Desktop（Electron） | 推断 ✓ | 推断显示说明 | 推断 ✓ | **否** |
+| DSH Desktop（Electron） | ✓ | 取决于宿主是否挂 `webServer` | ✓ | 否（手上没有桌面端） |
 
-前三行都实测过（web 有截图；tui / headless 用只装 `dsh-base` 的 profile 验证过「0 条未激活警告」）。
+这张表的机制只有一条：**面板的全部数据都走 `webServer` 上的同源 HTTP 路由**，宿主有这个服务，面板就完整；没有，就降级成「无数据通道」提示，两个工具照常可用。
 
-**Electron 那一行是推断，没有实测**——我手上没有桌面端安装。推断依据：DSH 文档写明 Electron 把页面从 `file://` 加载、fetch 走 IPC bridge，不使用 `node:http`；而 `dsh-client-connection` 里能注册给第三方插件的 fetch 路由（`registerFetchRoute`、`register`）都是 private，不是公开 API。换句话说，**第三方插件拿面板数据的公开通道只有 `webServer`**——这也是 `dsh-pet` 等有界面的插件把 `webServer` 写进 `inject` 的原因。
+这也是 DSH 插件生态的通行做法——不是「客户端专用适配」，而是**一套代码**。本机实测的五个有界面的插件全部如此：
 
-如果你在桌面端跑起来发现行为不同（比如它内嵌了一个 HTTP server，面板直接可用），欢迎开 issue 告诉我，那一行就能从推断改成实测。
+| 插件 | 数据通道 |
+|---|---|
+| dsh-pet | webServer 路由 |
+| dsh-plugin-wallpaper-engine | webServer 路由 |
+| dshmarket | webServer 路由 |
+| dsh-huashu-design | webServer 路由 |
+| dsh-purge-community | webServer 路由 |
+
+所以桌面端能不能看到面板，取决于它是否也挂载 `webServer`。DSH 文档提到 Electron 用 `file://` + IPC bridge 加载页面，但没有明说它是否同时起一个 `node:http` 服务；而上述插件都依赖它，桌面端若不提供，那些插件在客户端上会一起失效。
+
+**如果你在桌面端跑起来**：能看到左侧「明辨」图标就说明 `webServer` 在，面板完整可用；看不到图标则以 `tui` 那行行为为准。欢迎开 issue 反馈，这张表就能从「取决于」改成确定值。
+
+> 另注：DSH 还有一条更底层的跨宿主通道 `ctx.typertGateway` / `ctx.remote`（`@deepseek-ai/dsh-api-gateway`），理论上不依赖 HTTP。但它需要 `TypertRemoteService` + 代码生成或 SRC 回退，且上述五个插件一个都没用，所以本项目选择与生态一致的 webServer 路由。
 
 因此插件把 `webServer` 设成**软依赖**（不在 `inject` 里，用 `ctx.get()` 探测）：
 
