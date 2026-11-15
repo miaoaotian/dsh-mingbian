@@ -476,6 +476,7 @@ test('SSE 路由：流式事件序列完整，且会话可追问', async () => {
         }
       },
       end() {},
+      on(name, fn) { if (name === 'close') this.__onClose = fn; },
     };
     await route.handler(makeReq(JSON.stringify(payload)), res);
     return { events, headers, status };
@@ -527,6 +528,7 @@ test('SSE 路由对空议题回 error 事件而不是挂住', async () => {
       }
     },
     end() {},
+    on(name, fn) { if (name === 'close') this.__onClose = fn; },
   };
   await route.handler(makeReq(JSON.stringify({ masters: ['taleb'] })), res);
   assert.ok(events.some((e) => e.type === 'error' && e.error.includes('议题')));
@@ -671,6 +673,7 @@ test('SSE 必须立刻 flush 响应头，否则浏览器收不到任何响应', 
     flushHeaders() { order.push('flushHeaders'); },
     write() { order.push('write'); },
     end() { order.push('end'); },
+    on() {},
   };
   let wrote = false;
   await route.handler(makeReq(JSON.stringify({ question: 'q', masters: ['taleb'] })), res);
@@ -680,4 +683,46 @@ test('SSE 必须立刻 flush 响应头，否则浏览器收不到任何响应', 
   assert.ok(at >= 0 && order.indexOf('writeHead') < at, 'flushHeaders 要在 writeHead 之后');
   assert.ok(order.slice(at).includes('write'), 'flush 之后才写数据');
   void wrote;
+});
+
+test('请求体读完不能让流被判定为已关闭（req.close ≠ 连接断开）', async () => {
+  resetSessions();
+  const registered = [];
+  const { ctx } = fakeContext({ reply: (o) => (o.system.includes('主持人') ? '共识。' : '判断。') });
+  ctx.webServer = { register: (r) => { registered.push(r); return () => {}; } };
+  ctx.effect = (fn) => fn();
+  apply(ctx, {});
+
+  const route = registered.find((r) => r.path === `${BASE}/stream`);
+  const frames = [];
+
+  // 真实 Node 行为：请求体读完后 req 触发 close，但连接仍然有效。
+  // 若监听 req.close 去置 closed，后续所有 send() 都会被静默跳过——有头无数据。
+  const req = makeReq(JSON.stringify({ question: '要不要换工作', masters: ['taleb'] }));
+  const originalEmit = req.emit.bind(req);
+  req.emit = (name, ...args) => {
+    const result = originalEmit(name, ...args);
+    if (name === 'end') originalEmit('close');
+    return result;
+  };
+
+  let closeHandler = null;
+  const res = {
+    setHeader() {},
+    writeHead() {},
+    flushHeaders() {},
+    write(chunk) {
+      for (const line of String(chunk).split('\n')) {
+        if (line.startsWith('data: ')) frames.push(JSON.parse(line.slice(6)));
+      }
+    },
+    end() {},
+    on(name, fn) { if (name === 'close') closeHandler = fn; },
+  };
+
+  await route.handler(req, res);
+
+  assert.ok(frames.length > 0, 'req 读完就 close 不该导致一条数据都发不出');
+  assert.ok(frames.some((f) => f.type === 'turn'), '完整一轮应当送达');
+  assert.equal(closeHandler !== null, true, '必须监听 res 的 close 才能感知真正的断开');
 });
