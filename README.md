@@ -64,18 +64,28 @@
 
 ## 安装
 
+`dsh plugin` 会把参数转发给 pnpm，所以下面几种源都能装，装完**自动注册到 profile 的 bundles**，不用手改配置。
+
 ```bash
-# 从 npm（推荐）
+# 从 GitHub（推荐：不用等发版，改完源码直接装）
+dsh plugin --profile web add github:miaoaotian/dsh-mingbian
+
+# 从 npm（发布后可用）
 dsh plugin --profile web add dsh-mingbian
 
-# 或从本地克隆
-git clone https://github.com/miaoaotian/dsh-mingbian.git
-dsh plugin --profile web add link:$(pwd)/dsh-mingbian
+# 从 tarball（内部分发）
+npm pack
+dsh plugin --profile web add ./dsh-mingbian-0.1.0.tgz
+
+# 从本地克隆（开发用 link，改源码立即生效）
+dsh plugin --profile web add link:/absolute/path/to/dsh-mingbian
 ```
 
-重启 `dsh web`，左侧图标栏会出现「明辨」图标。
+装完**重启 `dsh web`**，左侧图标栏会出现「明辨」图标。
 
-**注意**：插件声明了 `webServer` 依赖，因此只在带 HTTP 栈的 profile（`web` / `desktop`）里加载；`headless`、`tui` 不会加载它。
+> **为什么 git 安装能直接用**：这个包没有构建步骤——`lib/client.js` 是手写源码，不是打包产物。多数 DSH 插件的浏览器半边是 tsdown/rolldown 构建出来的，从 git 装会因为缺构建脚本而拿不到可用的 bundle。
+
+**注意**：插件声明了 `webServer` 依赖，因此只在带 HTTP 栈的 profile（`web` / `desktop`）里加载。装到 `headless`、`tui` 会看到 `pending (waiting for service: webServer)`——这是依赖未满足时的正常挂起，不是装坏了。
 
 ## 用起来
 
