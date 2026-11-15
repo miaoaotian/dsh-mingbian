@@ -89,16 +89,24 @@ dsh plugin --profile web add link:/absolute/path/to/dsh-mingbian
 
 ### 支持的宿主
 
-| 宿主 | 插件加载 | 面板 | 会话工具 | 实测 |
-|---|---|---|---|---|
-| `dsh web`（浏览器） | ✓ | ✓ 完整 | ✓ | 是 |
-| `dsh tui` | ✓ | 显示说明 | ✓ | 是 |
-| `dsh headless` | ✓ | — | ✓ | 是 |
-| DSH Desktop（Electron） | ✓ | 取决于宿主是否挂 `webServer` | ✓ | 否（手上没有桌面端） |
+| 宿主 | 插件加载 | 面板 | 会话工具 |
+|---|---|---|---|
+| `dsh web`（浏览器） | ✓ | ✓ 完整 | ✓ |
+| DSH Desktop（Electron） | ✓ | ✓ 完整 | ✓ |
+| `dsh tui` | ✓ | 显示「无数据通道」说明 | ✓ |
+| `dsh headless` | ✓ | — | ✓ |
 
-这张表的机制只有一条：**面板的全部数据都走 `webServer` 上的同源 HTTP 路由**，宿主有这个服务，面板就完整；没有，就降级成「无数据通道」提示，两个工具照常可用。
+**桌面端是有面板的，而且是同一套代码。**
 
-这也是 DSH 插件生态的通行做法——不是「客户端专用适配」，而是**一套代码**。本机实测的五个有界面的插件全部如此：
+DSH 的架构决策记录（`.agents/notes/implemented/architecture/2026-09-10-desktop-web-wrapper.md`，状态 implemented）写明：
+
+> 私有 Desktop Host 针对独立归属的 Desktop profile 调用 CLI 的共享 profile runner。**完整 Web 组合负责认证、HTTP 路由、客户端资源、RPC 与响应流。**
+
+> **共享 HTTP 放弃无端口保证**，将服务与认证交给已有 Web 实现。
+
+同一份记录还把「维护第二套后端组合与传输」列为**被否决**的方案，理由正是「每项 Web 路由、重载行为、认证变化和流式能力都需要 Desktop 实现」——换句话说，官方为了「一套代码」主动放弃了无端口传输。所以桌面端跑的就是完整的 Web 组合，`webServer` 存在。
+
+这意味着**插件生态里不存在「客户端专用适配」**。本机实测的五个有界面的插件全部只暴露 `webServer` 路由：
 
 | 插件 | 数据通道 |
 |---|---|
@@ -108,9 +116,9 @@ dsh plugin --profile web add link:/absolute/path/to/dsh-mingbian
 | dsh-huashu-design | webServer 路由 |
 | dsh-purge-community | webServer 路由 |
 
-所以桌面端能不能看到面板，取决于它是否也挂载 `webServer`。DSH 文档提到 Electron 用 `file://` + IPC bridge 加载页面，但没有明说它是否同时起一个 `node:http` 服务；而上述插件都依赖它，桌面端若不提供，那些插件在客户端上会一起失效。
+本项目实现相同：`ctx.inject(['webServer'], …)` 挂六条同源 HTTP 路由。宿主有 `webServer` 就是完整面板，没有（TUI / headless）就降级成说明文字，两个工具始终可用。
 
-**如果你在桌面端跑起来**：能看到左侧「明辨」图标就说明 `webServer` 在，面板完整可用；看不到图标则以 `tui` 那行行为为准。欢迎开 issue 反馈，这张表就能从「取决于」改成确定值。
+> **关于桌面端的实测状态**：`dsh-desktop` 的源码不在公开仓库（`git ls-tree` 里 0 个匹配），npm 上也没有该包（404），因此没有可安装的公开构建可供我实测。上表桌面端一行依据的是上述官方架构决策记录，不是运行时验证。
 
 > 另注：DSH 还有一条更底层的跨宿主通道 `ctx.typertGateway` / `ctx.remote`（`@deepseek-ai/dsh-api-gateway`），理论上不依赖 HTTP。但它需要 `TypertRemoteService` + 代码生成或 SRC 回退，且上述五个插件一个都没用，所以本项目选择与生态一致的 webServer 路由。
 
