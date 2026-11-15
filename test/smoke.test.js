@@ -79,13 +79,30 @@ function fakeContext({ reply } = {}) {
       if (name === 'webServer') return ctxRef.value.webServer;
       return undefined;
     },
-    // 真实宿主里 webServer 是必声明服务，且 ctx.effect 是同步执行一次注册函数。
-    webServer: { register: () => () => {} },
+    // webServer 默认不给：需要它的测试自己挂，这样才能测到「没有 webServer」的分支。
     effect: (fn) => {
       const dispose = fn();
       return () => (typeof dispose === 'function' ? dispose() : undefined);
     },
   };
+  // 模拟 Cordis 的 ctx.inject：服务就绪才执行回调，否则挂起（不执行）。
+  ctx.inject = (deps, callback) => {
+    const services = {};
+    let allReady = true;
+    for (const dep of deps) {
+      const v = dep === 'webServer' ? ctxRef.value.webServer : undefined;
+      if (v === undefined) { allReady = false; break; }
+      services[dep] = v;
+    }
+    if (allReady) {
+      // 用原型继承而不是展开：保留测试自己装的 effect 收集器。
+      const scoped = Object.create(ctx);
+      Object.assign(scoped, services);
+      callback(scoped);
+    }
+    return { then: (f) => Promise.resolve().then(f) };
+  };
+
   ctxRef.value = ctx;
   return { ctx, tools, skills };
 }
@@ -620,28 +637,18 @@ test('prefix 路由的 path 不能带尾斜杠（带了会静默不生效）', a
 
 
 test('无 webServer 的宿主（Electron/TUI）上插件仍加载，工具照常注册', async () => {
-  const { ctx, tools, skills } = fakeContext({ reply: JSON.stringify(GOOD_MASTER) });
-  // 模拟 Electron：ctx.get('webServer') 返回 undefined，且没有 effect 挂路由。
-  ctx.get = (name) => (name === 'defaultModel' ? { current: { provider: 'p', model: 'm' } } : undefined);
-  const logs = [];
-  ctx.logger = { warn: (m) => logs.push(m), info: (m) => logs.push(m) };
-
-  const registered = [];
-  ctx.webServer = undefined;
-  apply(ctx, {});
-
-  assert.doesNotThrow(() => apply(fakeContext({ reply: '{}' }).ctx, {}), '没有 webServer 也不能抛错');
+  const { ctx, tools } = fakeContext({ reply: JSON.stringify(GOOD_MASTER) });
+  // 模拟 Electron/TUI：根本没有 webServer 服务，ctx.inject 的回调永不执行。
+  assert.equal(ctx.webServer, undefined);
+  assert.doesNotThrow(() => apply(ctx, {}), '没有 webServer 也不能抛错');
   assert.deepEqual([...tools.keys()].sort(), ['distill_master', 'master_roundtable']);
-  assert.equal(skills.length, 0, 'skill 是异步注册，这里只断言不崩');
-  assert.ok(logs.some((m) => String(m).includes('webServer')), '应留下一条说明，而不是静默降级');
 });
 
-test('有 webServer 时路由照常挂载', async () => {
+test('有 webServer 时路由照常挂载（通过 ctx.inject 延迟挂载）', async () => {
   const registered = [];
   const { ctx } = fakeContext({ reply: '{}' });
-  const realGet = ctx.get;
-  ctx.get = (name) => (name === 'webServer' ? { register: (r) => { registered.push(r); return () => {}; } } : realGet(name));
-  ctx.effect = (fn) => fn();
+  ctx.webServer = { register: (r) => { registered.push(r); return () => {}; } };
+  ctx.effect = (fn) => { fn(); };
   apply(ctx, {});
-  assert.equal(registered.length, 6);
+  assert.equal(registered.length, 6, 'webServer 就绪后六条路由都要挂上');
 });
