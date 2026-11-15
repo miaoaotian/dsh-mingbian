@@ -141,3 +141,12 @@ test('正文组件可被渲染函数取到', () => {
 test('没有 sidebarRightTabs 服务时只告警、不抛错', () => {
   assert.doesNotThrow(() => runApply(false));
 });
+
+test('bundle 里调用的 fetch* 辅助函数都有定义', () => {
+  // 这类错误只在真实浏览器里 401/500 时才暴露：函数名写错或替换没生效，
+  // 调用点在 useEffect 里，测试的 useEffect 是空操作，静态检查才抓得住。
+  const called = [...SRC.matchAll(/\b(fetch[A-Z]\w*)\(/g)].map((m) => m[1]);
+  const defined = new Set([...SRC.matchAll(/function (fetch[A-Z]\w*)\s*\(/g)].map((m) => m[1]));
+  const missing = [...new Set(called)].filter((name) => !defined.has(name));
+  assert.deepEqual(missing, [], `调用了未定义的辅助函数: ${missing.join(', ')}`);
+});
