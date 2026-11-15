@@ -85,7 +85,23 @@ dsh plugin --profile web add link:/absolute/path/to/dsh-mingbian
 
 > **为什么 git 安装能直接用**：这个包没有构建步骤——`lib/client.js` 是手写源码，不是打包产物。多数 DSH 插件的浏览器半边是 tsdown/rolldown 构建出来的，从 git 装会因为缺构建脚本而拿不到可用的 bundle。
 
-**注意**：插件声明了 `webServer` 依赖，因此只在带 HTTP 栈的 profile（`web` / `desktop`）里加载。装到 `headless`、`tui` 会看到 `pending (waiting for service: webServer)`——这是依赖未满足时的正常挂起，不是装坏了。
+### 支持的宿主
+
+| 宿主 | 插件加载 | 面板 | 会话工具 |
+|---|---|---|---|
+| `dsh web`（浏览器） | ✓ | ✓ 完整 | ✓ |
+| DSH Desktop（Electron） | ✓ | 显示「无数据通道」说明 | ✓ |
+| `dsh tui` | ✓ | 显示说明 | ✓ |
+| `dsh headless` | ✓ | — | ✓ |
+
+Electron 桌面端把页面从 `file://` 加载、fetch 走 IPC bridge；TUI 根本没有 HTTP 服务器。两者都没有 `node:http`，所以面板依赖的 HTTP 数据通道不存在。
+
+因此插件把 `webServer` 设成**软依赖**（不在 `inject` 里，用 `ctx.get()` 探测）：
+
+- 有 HTTP 栈 → 面板 + 六条路由全可用
+- 没有 → 插件照常加载，`distill_master` 与 `master_roundtable` 仍然可用，面板显示一句说明并列出可以直接在会话里说的话
+
+代价是这些宿主上没有图形面板。这么取舍是因为：把 `webServer` 写死成硬依赖，会让整个插件在这些宿主上**完全不加载**——连「蒸馏一位大师」都用不了，而工具本身根本不需要 HTTP。
 
 ## 用起来
 

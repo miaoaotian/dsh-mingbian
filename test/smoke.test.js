@@ -58,6 +58,7 @@ function makeReq(payload) {
 function fakeContext({ reply } = {}) {
   const tools = new Map();
   const skills = [];
+  const ctxRef = { value: null };
   const ctx = {
     logger: { warn() {}, info() {} },
     tools: { register: (def) => tools.set(def.name, def) },
@@ -72,7 +73,12 @@ function fakeContext({ reply } = {}) {
       },
     },
     // 真实宿主里未 inject 的服务属性会抛错，所以实现改走 ctx.get() 软取。
-    get: (name) => (name === 'defaultModel' ? { current: { provider: 'p', model: 'm' } } : undefined),
+    // webServer 同样从 get 走：测试用 ctx.webServer = {...} 挂上去即可。
+    get: (name) => {
+      if (name === 'defaultModel') return { current: { provider: 'p', model: 'm' } };
+      if (name === 'webServer') return ctxRef.value.webServer;
+      return undefined;
+    },
     // 真实宿主里 webServer 是必声明服务，且 ctx.effect 是同步执行一次注册函数。
     webServer: { register: () => () => {} },
     effect: (fn) => {
@@ -80,13 +86,16 @@ function fakeContext({ reply } = {}) {
       return () => (typeof dispose === 'function' ? dispose() : undefined);
     },
   };
+  ctxRef.value = ctx;
   return { ctx, tools, skills };
 }
 
 test('包元数据与依赖声明', () => {
   assert.equal(name, 'dsh-mingbian');
-  // webServer 必须在 inject 里：不声明的属性访问会直接抛错，try/catch 兜不住。
-  assert.deepEqual(inject, ['tools', 'llm', 'skills', 'webServer']);
+  // webServer 刻意不在 inject 里：软取才能让 Electron/TUI 也加载本插件。
+  // 硬依赖会让整个插件在这些宿主上消失，连会话里的工具都用不了。
+  assert.deepEqual(inject, ['tools', 'llm', 'skills']);
+  assert.ok(!inject.includes('webServer'), 'webServer 不能是硬依赖');
 });
 
 test('apply 注册了 skill 与两个工具', async () => {
@@ -607,4 +616,32 @@ test('prefix 路由的 path 不能带尾斜杠（带了会静默不生效）', a
   // 另外确认两条 prefix 都在。
   const prefixes = registered.filter((r) => r.kind === 'prefix').map((r) => r.path).sort();
   assert.deepEqual(prefixes, [`${BASE}/export`, `${BASE}/master`]);
+});
+
+
+test('无 webServer 的宿主（Electron/TUI）上插件仍加载，工具照常注册', async () => {
+  const { ctx, tools, skills } = fakeContext({ reply: JSON.stringify(GOOD_MASTER) });
+  // 模拟 Electron：ctx.get('webServer') 返回 undefined，且没有 effect 挂路由。
+  ctx.get = (name) => (name === 'defaultModel' ? { current: { provider: 'p', model: 'm' } } : undefined);
+  const logs = [];
+  ctx.logger = { warn: (m) => logs.push(m), info: (m) => logs.push(m) };
+
+  const registered = [];
+  ctx.webServer = undefined;
+  apply(ctx, {});
+
+  assert.doesNotThrow(() => apply(fakeContext({ reply: '{}' }).ctx, {}), '没有 webServer 也不能抛错');
+  assert.deepEqual([...tools.keys()].sort(), ['distill_master', 'master_roundtable']);
+  assert.equal(skills.length, 0, 'skill 是异步注册，这里只断言不崩');
+  assert.ok(logs.some((m) => String(m).includes('webServer')), '应留下一条说明，而不是静默降级');
+});
+
+test('有 webServer 时路由照常挂载', async () => {
+  const registered = [];
+  const { ctx } = fakeContext({ reply: '{}' });
+  const realGet = ctx.get;
+  ctx.get = (name) => (name === 'webServer' ? { register: (r) => { registered.push(r); return () => {}; } } : realGet(name));
+  ctx.effect = (fn) => fn();
+  apply(ctx, {});
+  assert.equal(registered.length, 6);
 });
