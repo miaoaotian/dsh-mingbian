@@ -264,7 +264,7 @@ test('apply 挂上八条路由并在卸载时回收', async () => {
       [`${BASE}/master`, 'prefix'],
       [`${BASE}/roundtable`, 'exact'],
       [`${BASE}/sessions`, 'exact'],
-      [`${BASE}/sessions/`, 'prefix'],
+      [`${BASE}/sessions`, 'prefix'],
       [`${BASE}/stream`, 'exact'],
     ].sort(),
   );
@@ -629,16 +629,13 @@ test('prefix 路由的 path 不能带尾斜杠（带了会静默不生效）', a
 
   for (const route of registered) {
     if (route.kind !== 'prefix') continue;
-    // `/sessions/` 是唯一例外：它就是一个以斜杠结尾的命名空间前缀，
-    // 宿主对 prefix 的匹配是 p 和 p/<anything>，这里 p 本身也要能命中列表接口。
-    if (route.path === `${BASE}/sessions/`) continue;
     assert.ok(
       !route.path.endsWith('/'),
-      `prefix 路由 ${route.path} 带了尾斜杠 —— 宿主把它当 exact 匹配，GET 会落到 404 fallback`,
+      `prefix 路由 ${route.path} 带了尾斜杠 —— 宿主追加 / 后无法匹配正常的子路径`,
     );
   }
   const prefixes = registered.filter((r) => r.kind === 'prefix').map((r) => r.path).sort();
-  assert.deepEqual(prefixes, [`${BASE}/export`, `${BASE}/master`, `${BASE}/sessions/`]);
+  assert.deepEqual(prefixes, [`${BASE}/export`, `${BASE}/master`, `${BASE}/sessions`]);
 });
 
 
@@ -764,18 +761,39 @@ test('历史列表按最近更新排序，且只带摘要', async () => {
   assert.equal(row.turns, undefined, '列表只带摘要，不搬全文');
 });
 
-test('历史会话可通过路由读取', async () => {
+test('历史会话经宿主路由匹配后可从磁盘读取', async () => {
+  const registered = [];
+  const { ctx } = fakeContext({ reply: '{}' });
+  ctx.webServer = { register: (route) => { registered.push(route); return () => {}; } };
+  apply(ctx, {});
+
+  // 对齐 DSH webServer.match：先 exact，再按路径段匹配最长 prefix。
+  // 不能直接调用 respond，否则路由注册错误仍会让测试通过。
+  async function request(pathname) {
+    const route = registered.find((r) => r.kind === 'exact' && r.path === pathname)
+      ?? registered
+        .filter((r) => r.kind === 'prefix' && (pathname === r.path || pathname.startsWith(`${r.path}/`)))
+        .sort((a, b) => b.path.length - a.path.length)[0];
+    assert.ok(route, `宿主未匹配到路由：${pathname}`);
+    return route.resource(new Request(`http://localhost${pathname}`));
+  }
+
   resetSessions();
   const session = createSession({ topic: '路由读取测试', seats: ['taleb'], thinking: 'off' });
   await appendTurn(session.id, { question: 'q', takes: [], host: 'h' });
+  resetSessions();
 
-  const list = await (await respond(`${BASE}/sessions`)).json();
+  const listResponse = await request(`${BASE}/sessions`);
+  assert.equal(listResponse.status, 200);
+  const list = await listResponse.json();
   assert.ok(list.sessions.some((s) => s.id === session.id));
 
-  const detail = await respond(`${BASE}/sessions/${session.id}`);
+  const detail = await request(`${BASE}/sessions/${encodeURIComponent(session.id)}`);
   assert.equal(detail.status, 200);
   const body = await detail.json();
-  assert.equal(body.turns.length, 1);
+  assert.deepEqual(body, session, '应恢复完整会话、座位与历史问答');
 
-  assert.equal((await respond(`${BASE}/sessions/rt-不存在`)).status, 404);
+  const missing = await request(`${BASE}/sessions/rt-missing`);
+  assert.equal(missing.status, 404);
+  assert.deepEqual(await missing.json(), { error: '没有这场对话' });
 });
